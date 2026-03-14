@@ -1,33 +1,53 @@
 package org.assignment.util;
 
-import java.awt.*;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * Utility class for high-performance processing of {@link Event} streams.
+ * <p>
+ * This utility provides methods to aggregate event data into statistical summaries
+ * while maintaining a low memory footprint by avoiding full list materialization.
+ * </p>
+ *
+ * @author Pradipto Dattagupta
+ * @version 1.0
+ */
+@Slf4j
 public class EventProcessingUtility {
+
+    /**
+     * Processes an input stream of events to generate an aggregated statistics map per ID.
+     *
+     * @param recordStream A {@link Stream} of {@link Event} objects to be processed.
+     * @return A {@link Map} where the key is the event ID, and the value is a map of statistics
+     */
     public static Map<String, Map<String, Object>> getAggrStats(Stream<Event> recordStream) {
 
-        //Set added for filter with combination of id+timestamp
-        Set<String> seenKeys = new HashSet<>();
+        //Set added for filter with combination of id+timestamp, this uses ConcurrentHashMap for thread-safety
+        Set<String> seenKeys = ConcurrentHashMap.newKeySet();
 
         return recordStream
-//                .parallel()
-                .filter(e -> seenKeys.add(e.id()+"_"+e.timestamp()))
+                .parallel()
+                .filter(e -> seenKeys.add(e.id() + "_" + e.timestamp()))
                 .collect(Collectors.groupingBy(
-                Event::id,
-                Collector.of(
-                        StatsAccumulator::new,
-                        StatsAccumulator::accept,
-                        StatsAccumulator::combine,
-                        StatsAccumulator::toMap
-                )
-        ));
+                        Event::id,
+                        Collector.of(
+                                StatsAccumulator::new,
+                                StatsAccumulator::accept,
+                                StatsAccumulator::combine,
+                                StatsAccumulator::toMap
+                        )
+                ));
     }
+
 
     private static class StatsAccumulator {
         private long validCount = 0;
@@ -37,7 +57,10 @@ public class EventProcessingUtility {
         private long totalCount = 0;
 
         void accept(Event e) {
-            if (e.value() < 0) validCount++;
+            if (e.value() < 0) {
+                validCount++;
+            }
+
             minTimestamp = Math.min(minTimestamp, e.timestamp());
             maxTimestamp = Math.max(maxTimestamp, e.timestamp());
             sumValue += e.value();
